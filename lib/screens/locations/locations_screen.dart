@@ -218,6 +218,203 @@ class _LocationsScreenState extends State<LocationsScreen> {
             ),
           ),
           const SizedBox(height: 16),
+
+          // Incoming transfers awaiting approval at current location
+          Builder(builder: (context) {
+            final incoming = LocationService.pendingIncoming();
+            final outgoing = LocationService.pendingOutgoing();
+            if (incoming.isEmpty && outgoing.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (incoming.isNotEmpty) ...[
+                  const Text(
+                    'Incoming — approve to add to this shop',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  ...incoming.map((tr) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${tr['productName']} × ${tr['quantity']}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                            'From: ${tr['fromName'] ?? tr['fromLocationId']}\n'
+                            'Sent by: ${tr['byName']} · ${tr['note'] ?? ''}',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    final reason = await showDialog<String>(
+                                      context: context,
+                                      builder: (ctx) {
+                                        final c = TextEditingController();
+                                        return AlertDialog(
+                                          title: const Text('Reject transfer?'),
+                                          content: TextField(
+                                            controller: c,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Reason (optional)',
+                                            ),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(ctx),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, c.text),
+                                              child: const Text('Reject'),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    );
+                                    if (reason == null) return;
+                                    try {
+                                      await LocationService.rejectTransfer(
+                                        tr['id'].toString(),
+                                        reason: reason,
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Rejected — stock returned to sender',
+                                            ),
+                                            backgroundColor: AppColors.danger,
+                                          ),
+                                        );
+                                        _refresh();
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(content: Text('$e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  child: const Text('Reject'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('Approve transfer?'),
+                                        content: Text(
+                                          'Add ${tr['quantity']} × ${tr['productName']} '
+                                          'to ${LocationService.current?.name ?? "this shop"}?',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: const Text('Approve'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (ok != true) return;
+                                    try {
+                                      await LocationService.approveTransfer(
+                                        tr['id'].toString(),
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Approved — stock added here',
+                                            ),
+                                            backgroundColor: AppColors.success,
+                                          ),
+                                        );
+                                        _refresh();
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(content: Text('$e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('Approve'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                ],
+                if (outgoing.isNotEmpty) ...[
+                  const Text(
+                    'Outgoing — waiting for receiver',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  ...outgoing.map((tr) {
+                    return ListTile(
+                      tileColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      title: Text(
+                        '${tr['productName']} × ${tr['quantity']}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text('To: ${tr['toName'] ?? tr['toLocationId']} · pending'),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            );
+          }),
           const Text(
             'Your shops',
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
@@ -362,7 +559,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Transfer completed'),
+          content: Text('Transfer sent — waiting for receiver to approve'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -468,7 +665,7 @@ class _StockTransferScreenState extends State<StockTransferScreen> {
               minimumSize: const Size.fromHeight(50),
             ),
             child: Text(
-              saving ? 'Transferring…' : 'TRANSFER',
+              saving ? 'Sending…' : 'SEND FOR APPROVAL',
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
           ),

@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/product_storage.dart';
 import '../../services/location_service.dart';
 import 'product_form_screen.dart';
+import '../../services/product_excel_service.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -45,6 +46,86 @@ class _ProductListScreenState extends State<ProductListScreen> {
       products = list;
       loading = false;
     });
+  }
+
+
+  Future<void> _exportExcel() async {
+    try {
+      final name = await ProductExcelService.exportAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported: $name'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
+  Future<void> _importExcel() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Import products from Excel'),
+        content: const Text(
+          'Columns: Name, SKU, Category, Unit, Cost Price, Selling Price, '
+          'Quantity, Reorder Level, Description, Active.\n\n'
+          'Matching SKU will UPDATE the product. New SKUs are created.\n'
+          'Quantity applies to the current working location.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Choose file'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final result = await ProductExcelService.importFromPicker();
+      await load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.summary),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      if (result.errors.isNotEmpty && mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Some rows failed'),
+            content: SingleChildScrollView(
+              child: Text(result.errors.join('\n')),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
   }
 
   List<Product> get filtered {
@@ -180,6 +261,33 @@ class _ProductListScreenState extends State<ProductListScreen> {
               ),
             ),
           ),
+          if (canEdit)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _exportExcel,
+                      icon: const Icon(Icons.file_download_outlined, size: 18),
+                      label: const Text('Export Excel'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _importExcel,
+                      icon: const Icon(Icons.file_upload_outlined, size: 18),
+                      label: const Text('Import Excel'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),

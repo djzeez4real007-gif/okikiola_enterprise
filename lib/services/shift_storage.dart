@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../models/shift.dart';
 import 'audit_log_storage.dart';
 import 'auth_service.dart';
+import 'data_refresh.dart';
 import 'hive_boxes.dart';
 import 'sale_storage.dart';
 import 'stock_snapshot_storage.dart';
@@ -151,6 +152,7 @@ class ShiftStorage {
       openingCash: openingCash,
     );
     await _box.add(shift.toMap());
+    DataRefresh.notify();
     await AuditLogStorage.log(
       action: 'shift_opened',
       module: 'shifts',
@@ -258,6 +260,7 @@ class ShiftStorage {
         break;
       }
     }
+    DataRefresh.notify();
 
     final vLabel = variance >= 0
         ? 'over ₦${variance.toStringAsFixed(0)}'

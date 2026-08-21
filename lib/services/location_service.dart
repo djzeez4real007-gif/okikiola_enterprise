@@ -254,8 +254,8 @@ class LocationService {
     }
   }
 
-  /// Transfer qty from one location to another.
-  static Future<void> transfer({
+  /// Send stock to another location — leaves source immediately, waits for receiver approval.
+  static Future<String> transfer({
     required String productId,
     required String productName,
     required String fromLocationId,
@@ -271,49 +271,157 @@ class LocationService {
     if (available + 0.0001 < quantity) {
       throw Exception('Only $available available at source location');
     }
+
+    // Deduct from sender now (in transit)
     await adjustStock(
       fromLocationId,
       productId,
       -quantity,
-      reason: 'Transfer out to $toLocationId ($productName)',
+      reason: 'Transfer out (pending) to $toLocationId ($productName)',
     );
-    await adjustStock(
-      toLocationId,
-      productId,
-      quantity,
-      reason: 'Transfer in from $fromLocationId ($productName)',
-    );
+
+    final id = const Uuid().v4();
+    final fromName = () { for (final l in all()) { if (l.id == fromLocationId) return l.name; } return fromLocationId; }();
+    final toName = () { for (final l in all()) { if (l.id == toLocationId) return l.name; } return toLocationId; }();
+    final user = AuthService.currentUser;
 
     final transferBox = Hive.box(HiveBoxes.stockTransfers);
     await transferBox.add({
-      'id': const Uuid().v4(),
+      'id': id,
       'productId': productId,
       'productName': productName,
       'fromLocationId': fromLocationId,
       'toLocationId': toLocationId,
+      'fromName': fromName,
+      'toName': toName,
       'quantity': quantity,
       'note': note,
-      'byId': AuthService.currentUser?.id ?? '',
-      'byName': AuthService.currentName,
+      'status': 'pending', // pending | approved | rejected
+      'byId': user?.id ?? '',
+      'byName': user?.name ?? '',
       'at': DateTime.now().toIso8601String(),
+      'resolvedAt': '',
+      'resolvedBy': '',
     });
 
-    final fromName = all().firstWhere((l) => l.id == fromLocationId).name;
-    final toName = all().firstWhere((l) => l.id == toLocationId).name;
     await AuditLogStorage.log(
-      action: 'stock_transfer',
+      action: 'stock_transfer_sent',
       module: 'locations',
       description:
-          'Transfer $quantity × $productName: $fromName → $toName by ${AuthService.currentName}',
-      refId: productId,
+          'Transfer pending: $quantity × $productName: $fromName → $toName by ${user?.name ?? ""}',
+      refId: id,
     );
+    return id;
   }
 
-  static List<Map<String, dynamic>> transferHistory() {
-    final box = Hive.box(HiveBoxes.stockTransfers);
-    final list = box.values
-        .map((e) => Map<String, dynamic>.from(e as Map))
+  static List<Map<String, dynamic>> pendingIncoming({String? locationId}) {
+    final loc = locationId ?? currentId;
+    if (loc == null) return [];
+    return transferHistory()
+        .where((t) =>
+            t['status']?.toString() == 'pending' &&
+            t['toLocationId']?.toString() == loc)
         .toList();
+  }
+
+  static List<Map<String, dynamic>> pendingOutgoing({String? locationId}) {
+    final loc = locationId ?? currentId;
+    if (loc == null) return [];
+    return transferHistory()
+        .where((t) =>
+            t['status']?.toString() == 'pending' &&
+            t['fromLocationId']?.toString() == loc)
+        .toList();
+  }
+
+  static Future<void> approveTransfer(String transferId) async {
+    final box = Hive.box(HiveBoxes.stockTransfers);
+    final values = box.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      final m = Map<String, dynamic>.from(values[i] as Map);
+      if (m['id']?.toString() != transferId) continue;
+      if (m['status']?.toString() != 'pending') {
+        throw Exception('Transfer is not pending');
+      }
+      final toId = m['toLocationId']?.toString() ?? '';
+      final productId = m['productId']?.toString() ?? '';
+      final productName = m['productName']?.toString() ?? '';
+      final qty = (m['quantity'] as num?)?.toDouble() ?? 0;
+
+      await adjustStock(
+        toId,
+        productId,
+        qty,
+        reason: 'Transfer in approved ($productName)',
+      );
+
+      m['status'] = 'approved';
+      m['resolvedAt'] = DateTime.now().toIso8601String();
+      m['resolvedBy'] = AuthService.currentName;
+      await box.putAt(i, m);
+
+      await AuditLogStorage.log(
+        action: 'stock_transfer_approved',
+        module: 'locations',
+        description:
+            'Approved ${m['quantity']} × $productName into ${m['toName']} by ${AuthService.currentName}',
+        refId: transferId,
+      );
+      return;
+    }
+    throw Exception('Transfer not found');
+  }
+
+  static Future<void> rejectTransfer(String transferId, {String reason = ''}) async {
+    final box = Hive.box(HiveBoxes.stockTransfers);
+    final values = box.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      final m = Map<String, dynamic>.from(values[i] as Map);
+      if (m['id']?.toString() != transferId) continue;
+      if (m['status']?.toString() != 'pending') {
+        throw Exception('Transfer is not pending');
+      }
+      final fromId = m['fromLocationId']?.toString() ?? '';
+      final productId = m['productId']?.toString() ?? '';
+      final productName = m['productName']?.toString() ?? '';
+      final qty = (m['quantity'] as num?)?.toDouble() ?? 0;
+
+      // Return stock to sender
+      await adjustStock(
+        fromId,
+        productId,
+        qty,
+        reason: 'Transfer rejected — returned ($productName) $reason',
+      );
+
+      m['status'] = 'rejected';
+      m['resolvedAt'] = DateTime.now().toIso8601String();
+      m['resolvedBy'] = AuthService.currentName;
+      m['rejectReason'] = reason;
+      await box.putAt(i, m);
+
+      await AuditLogStorage.log(
+        action: 'stock_transfer_rejected',
+        module: 'locations',
+        description:
+            'Rejected ${m['quantity']} × $productName back to ${m['fromName']} by ${AuthService.currentName}',
+        refId: transferId,
+      );
+      return;
+    }
+    throw Exception('Transfer not found');
+  }
+
+    static List<Map<String, dynamic>> transferHistory() {
+    final box = Hive.box(HiveBoxes.stockTransfers);
+    final list = box.values.map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      // Legacy transfers (before approval flow) count as approved
+      if (m['status'] == null || m['status'].toString().isEmpty) {
+        m['status'] = 'approved';
+      }
+      return m;
+    }).toList();
     list.sort((a, b) =>
         (b['at'] ?? '').toString().compareTo((a['at'] ?? '').toString()));
     return list;

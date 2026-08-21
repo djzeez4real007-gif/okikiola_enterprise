@@ -9,6 +9,8 @@ import '../../services/location_service.dart';
 import '../../services/product_storage.dart';
 import '../../services/sale_storage.dart';
 import '../../services/shift_storage.dart';
+import '../../services/cash_movement_storage.dart';
+import '../../services/data_refresh.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -52,7 +54,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    LocationService.currentListenable.addListener(_onLocationChanged);
+    DataRefresh.tick.addListener(_onDataRefresh);
     load();
+  }
+
+  void _onLocationChanged() => load();
+  void _onDataRefresh() => load();
+
+  @override
+  void dispose() {
+    LocationService.currentListenable.removeListener(_onLocationChanged);
+    DataRefresh.tick.removeListener(_onDataRefresh);
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -72,11 +86,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int tCount = 0, tItems = 0;
     final Map<String, Map<String, dynamic>> sold = {};
 
+    final currentLocId = LocationService.currentId ?? '';
+    String? defaultLocId;
+    for (final l in LocationService.all()) {
+      if (l.isDefault) {
+        defaultLocId = l.id;
+        break;
+      }
+    }
+
     for (final s in sales) {
       if (s.voided) continue;
-      // Sales boy: only own sales on personal cards; owner sees all
-      if (isSales && s.soldById != (AuthService.currentUser?.id ?? '')) {
-        // still skip for personal today if we want — keep all for consistency with shop floor
+      // Scope to current working location (old sales without location → default shop)
+      final saleLoc = s.locationId.isNotEmpty
+          ? s.locationId
+          : (defaultLocId ?? '');
+      if (currentLocId.isNotEmpty &&
+          saleLoc.isNotEmpty &&
+          saleLoc != currentLocId) {
+        continue;
       }
       final mine = !isSales ||
           s.soldById == (AuthService.currentUser?.id ?? '') ||
@@ -160,6 +188,261 @@ class _DashboardScreenState extends State<DashboardScreen> {
       topToday = ranked.take(5).toList();
       loading = false;
     });
+  }
+
+
+  Future<void> _openShiftFromDash() async {
+    final suggested = await ShiftStorage.suggestedOpeningCash();
+    final ctrl = TextEditingController(text: suggested.toStringAsFixed(0));
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Open shift',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+                const SizedBox(height: 8),
+                Text(
+                  'Opening float is pre-filled from last closed shift.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: ctrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Opening cash (₦)',
+                    prefixIcon: Icon(Icons.payments_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: const Text('OPEN SHIFT',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (ok != true) return;
+    final amount = double.tryParse(ctrl.text) ?? 0;
+    try {
+      await ShiftStorage.openShift(openingCash: amount);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Shift opened'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
+  Future<void> _closeShiftFromDash() async {
+    final uid = AuthService.currentUser?.id;
+    final open = await ShiftStorage.currentOpenShift(userId: uid);
+    if (open == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No open shift')),
+      );
+      return;
+    }
+    final ctrl = TextEditingController(
+      text: open.openingCash.toStringAsFixed(0),
+    );
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Close shift',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+                const SizedBox(height: 8),
+                Text(
+                  'Count the cash in the drawer and enter the total.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: ctrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Cash counted (₦)',
+                    prefixIcon: Icon(Icons.savings_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: const Text('CLOSE SHIFT',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (ok != true) return;
+    final counted = double.tryParse(ctrl.text) ?? 0;
+    try {
+      await ShiftStorage.closeShift(shift: open, closingCashCounted: counted);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Shift closed'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
+
+  Future<void> _cashOutFromDash() async {
+    if (!shiftOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Open a shift first')),
+      );
+      return;
+    }
+    final amountCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController(text: 'Owner cash pickup');
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Cash out from drawer',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Enter the amount removed from the till (not a sale). '
+                  'This is used when closing the shift.',
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Amount (₦) *',
+                    prefixIcon: Icon(Icons.money_off_rounded),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason',
+                    prefixIcon: Icon(Icons.notes_rounded),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.danger,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: const Text(
+                    'RECORD CASH OUT',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (ok != true) return;
+    final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+    try {
+      await CashMovementStorage.addOut(
+        amount: amount,
+        reason: reasonCtrl.text.trim().isEmpty
+            ? 'Owner cash pickup'
+            : reasonCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cash out recorded: ${money.format(amount)}'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
   }
 
   @override
@@ -290,8 +573,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                         ],
-                        if (isSales) ...[
-                          const SizedBox(height: 18),
+                        // Shift controls — sales boy (and useful for everyone)
+                        const SizedBox(height: 18),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
@@ -299,34 +582,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               color: Colors.white.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Icon(
-                                  shiftOpen
-                                      ? Icons.check_circle_rounded
-                                      : Icons.warning_amber_rounded,
-                                  color: shiftOpen
-                                      ? const Color(0xFF6EE7B7)
-                                      : const Color(0xFFFCD34D),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      shiftOpen
+                                          ? Icons.check_circle_rounded
+                                          : Icons.warning_amber_rounded,
+                                      color: shiftOpen
+                                          ? const Color(0xFF6EE7B7)
+                                          : const Color(0xFFFCD34D),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        shiftOpen
+                                            ? 'Shift open since $shiftSince · float ${money.format(openingCash)}'
+                                            : 'Shift closed — open before selling',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    shiftOpen
-                                        ? 'Shift open since $shiftSince · float ${money.format(openingCash)}'
-                                        : 'Shift closed — open a shift before selling',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                      height: 1.3,
+                                const SizedBox(height: 12),
+                                if (!shiftOpen)
+                                  SizedBox(
+                                    height: 44,
+                                    child: ElevatedButton.icon(
+                                      onPressed: _openShiftFromDash,
+                                      icon: const Icon(Icons.play_arrow_rounded),
+                                      label: const Text(
+                                        'OPEN SHIFT',
+                                        style: TextStyle(fontWeight: FontWeight.w900),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: AppColors.primary,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else ...[
+                                  SizedBox(
+                                    height: 44,
+                                    child: ElevatedButton.icon(
+                                      onPressed: _closeShiftFromDash,
+                                      icon: const Icon(Icons.stop_rounded),
+                                      label: const Text(
+                                        'CLOSE SHIFT',
+                                        style: TextStyle(fontWeight: FontWeight.w900),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFF59E0B),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    height: 44,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _cashOutFromDash,
+                                      icon: const Icon(Icons.money_off_rounded,
+                                          color: Colors.white),
+                                      label: const Text(
+                                        'CASH OUT',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        side: const BorderSide(color: Colors.white70),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ),

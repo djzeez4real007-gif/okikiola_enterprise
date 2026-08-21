@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../models/sale.dart';
-import '../../services/location_service.dart';
+import '../../services/receipt_pdf_service.dart';
 
 class SaleReceiptScreen extends StatelessWidget {
   final Sale sale;
@@ -15,21 +15,45 @@ class SaleReceiptScreen extends StatelessWidget {
     final money = NumberFormat.currency(symbol: '₦', decimalDigits: 0);
     String when;
     try {
-      when = DateFormat('dd MMM yyyy · HH:mm')
-          .format(DateTime.parse(sale.createdAt));
+      when = DateFormat('dd MMM yyyy · HH:mm').format(DateTime.parse(sale.createdAt));
     } catch (_) {
       when = sale.createdAt;
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: const Text('Sale receipt'),
+        title: const Text('Receipt'),
         actions: [
           IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close),
+            tooltip: 'Print',
+            onPressed: () async {
+              try {
+                await ReceiptPdfService.print(sale);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$e')),
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.print_rounded),
+          ),
+          IconButton(
+            tooltip: 'Share PDF',
+            onPressed: () async {
+              try {
+                await ReceiptPdfService.share(sale);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$e')),
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.share_rounded),
           ),
         ],
       ),
@@ -37,187 +61,230 @@ class SaleReceiptScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Container(
+            padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
                 Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(22),
+                  width: 64,
+                  height: 64,
                   decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
                     gradient: LinearGradient(
                       colors: [Color(0xFF0F766E), Color(0xFF14B8A6)],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'OKIKIOLA ENTERPRISE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          letterSpacing: 0.6,
-                        ),
+                  child: const Icon(Icons.storefront_rounded,
+                      color: Colors.white, size: 32),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'OKIKIOLA ENTERPRISE',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+                Text(
+                  'NIG LTD',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'WhatsApp 07068791117',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Container(height: 2, color: AppColors.primary.withValues(alpha: 0.3)),
+                const SizedBox(height: 12),
+                _meta('Receipt', sale.receiptNo),
+                _meta('Date', when),
+                _meta('Cashier', sale.soldByName),
+                if (sale.voided)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'VOIDED',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w900,
                       ),
-                      const Text(
-                        'NIG LTD',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if ((LocationService.current?.name ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          LocationService.current!.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                const Divider(),
+                ...sale.items.map((it) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                it.productName,
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                '${it.quantity} ${it.unit} × ${money.format(it.unitPrice)}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
+                        ),
+                        Text(
+                          money.format(it.lineTotal),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ],
-                      if ((LocationService.current?.address ?? '').isNotEmpty)
-                        Text(
-                          LocationService.current!.address,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 12,
-                          ),
+                    ),
+                  );
+                }),
+                const Divider(),
+                _meta('Subtotal', money.format(sale.subtotal)),
+                if (sale.discountTotal > 0)
+                  _meta('Discount', '- ${money.format(sale.discountTotal)}'),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'TOTAL',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.primary,
                         ),
-                      if ((LocationService.current?.phone ?? '').isNotEmpty)
-                        Text(
-                          LocationService.current!.phone,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 12,
-                          ),
-                        ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          sale.receiptNo,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
+                      ),
+                      Text(
+                        money.format(sale.total),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                          color: AppColors.primary,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    children: [
-                      Text(
-                        money.format(sale.total),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 32,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      Text(when,
-                          style: TextStyle(color: Colors.grey.shade600)),
-                      const Divider(height: 28),
-                      ...sale.items.map((i) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${i.productName} ×${i.quantity.toStringAsFixed(0)}',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                                Text(
-                                  money.format(i.lineTotal),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800),
-                                ),
-                              ],
-                            ),
-                          )),
-                      const Divider(height: 24),
-                      _row('Subtotal', money.format(sale.subtotal)),
-                      if (sale.discountTotal > 0)
-                        _row('Discount', '-${money.format(sale.discountTotal)}'),
-                      _row('Total', money.format(sale.total), bold: true),
-                      if (sale.cashPaid > 0)
-                        _row('Cash', money.format(sale.cashPaid)),
-                      if (sale.transferPaid > 0)
-                        _row('Transfer', money.format(sale.transferPaid)),
-                      if (sale.posPaid > 0)
-                        _row('POS', money.format(sale.posPaid)),
-                      _row(
-                        'Paid (${sale.paymentMethod})',
-                        money.format(sale.amountPaid),
-                        bold: true,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Served by ${sale.soldByName}',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'WhatsApp 07068791117',
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Payment: ${sale.paymentMethod}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (sale.cashPaid > 0)
+                  _meta('Cash', money.format(sale.cashPaid)),
+                if (sale.transferPaid > 0)
+                  _meta('Transfer', money.format(sale.transferPaid)),
+                if (sale.posPaid > 0) _meta('POS', money.format(sale.posPaid)),
+                const SizedBox(height: 16),
+                Text(
+                  'Thank you for your patronage',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary.withValues(alpha: 0.9),
                   ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await ReceiptPdfService.print(sale);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.print_rounded),
+                  label: const Text('Print'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: const Text('DONE', style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await ReceiptPdfService.share(sale);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.share_rounded),
+                  label: const Text('Share PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
           ),
         ],
       ),
     );
   }
 
-  Widget _row(String a, String b, {bool bold = false}) {
+  Widget _meta(String k, String v) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(child: Text(a)),
-          Text(
-            b,
-            style: TextStyle(
-              fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-              fontSize: bold ? 16 : 14,
-            ),
-          ),
+          Text(k, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w700)),
         ],
       ),
     );

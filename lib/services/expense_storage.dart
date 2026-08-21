@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../models/expense.dart';
 import 'audit_log_storage.dart';
 import 'auth_service.dart';
+import 'data_refresh.dart';
 import 'hive_boxes.dart';
 
 class ExpenseStorage {
@@ -40,6 +41,7 @@ class ExpenseStorage {
       createdAt: DateTime.now().toIso8601String(),
     );
     await _box.add(expense.toMap());
+    DataRefresh.notify();
     await AuditLogStorage.log(
       action: 'expense_added',
       module: 'expenses',

@@ -6,6 +6,7 @@ import 'audit_log_storage.dart';
 import 'auth_service.dart';
 import 'hive_boxes.dart';
 import 'product_storage.dart';
+import 'data_refresh.dart';
 import 'location_service.dart';
 import 'shift_storage.dart';
 
@@ -98,6 +99,8 @@ class SaleStorage {
       soldByRole: user?.role ?? '',
       createdAt: DateTime.now().toIso8601String(),
       note: note,
+      locationId: LocationService.currentId ?? '',
+      locationName: LocationService.current?.name ?? '',
     );
 
     // Deduct stock
@@ -112,6 +115,7 @@ class SaleStorage {
     }
 
     await _box.add(sale.toMap());
+    DataRefresh.notify();
     await AuditLogStorage.log(
       action: 'sale_completed',
       module: 'sales',

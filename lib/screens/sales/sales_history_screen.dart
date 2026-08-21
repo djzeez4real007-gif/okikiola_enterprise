@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/sale.dart';
 import '../../services/auth_service.dart';
 import '../../services/sale_storage.dart';
+import '../../services/location_service.dart';
 import 'sale_receipt_screen.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
@@ -41,6 +42,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget build(BuildContext context) {
     final canVoid = Permissions.canVoidSale(AuthService.currentRole);
     final filtered = sales.where((s) {
+      // Current location only
+      final loc = LocationService.currentId ?? '';
+      if (loc.isNotEmpty) {
+        final saleLoc = s.locationId.isNotEmpty ? s.locationId : '';
+        // Include untagged (legacy) only on default location
+        if (saleLoc.isNotEmpty && saleLoc != loc) return false;
+        if (saleLoc.isEmpty) {
+          final def = LocationService.all().where((l) => l.isDefault);
+          if (def.isNotEmpty && def.first.id != loc) return false;
+        }
+      }
+
       final q = query.trim().toLowerCase();
       if (q.isEmpty) return true;
       final items = s.items.map((e) => e.productName).join(' ').toLowerCase();

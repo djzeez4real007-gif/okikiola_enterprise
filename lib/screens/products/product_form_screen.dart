@@ -36,6 +36,67 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   bool get canEditCost =>
       Permissions.canEditCostPrice(AuthService.currentRole);
 
+  static const _baseUnits = [
+    'pcs',
+    'carton',
+    'pack',
+    'yard',
+    'sheet',
+    'pan',
+    'gallon',
+    'kg',
+    'g',
+    'litre',
+    'bag',
+    'dozen',
+  ];
+
+  List<String> get _unitChoices {
+    final u = _normalizeUnit(unit);
+    if (_baseUnits.contains(u)) return List<String>.from(_baseUnits);
+    return [..._baseUnits, u];
+  }
+
+  String _normalizeUnit(String raw) {
+    final s = raw.trim().toLowerCase();
+    const map = {
+      'bags': 'bag',
+      'bag': 'bag',
+      'pcs': 'pcs',
+      'pc': 'pcs',
+      'piece': 'pcs',
+      'pieces': 'pcs',
+      'cartons': 'carton',
+      'carton': 'carton',
+      'packs': 'pack',
+      'pack': 'pack',
+      'yards': 'yard',
+      'yard': 'yard',
+      'sheets': 'sheet',
+      'sheet': 'sheet',
+      'pans': 'pan',
+      'pan': 'pan',
+      'gallons': 'gallon',
+      'gallon': 'gallon',
+      'kgs': 'kg',
+      'kg': 'kg',
+      'kilogram': 'kg',
+      'kilograms': 'kg',
+      'grams': 'g',
+      'gram': 'g',
+      'g': 'g',
+      'litre': 'litre',
+      'liter': 'litre',
+      'litres': 'litre',
+      'liters': 'litre',
+      'l': 'litre',
+      'dozen': 'dozen',
+      'dozens': 'dozen',
+    };
+    return map[s] ?? (s.isEmpty ? 'pcs' : s);
+  }
+
+
   @override
   void initState() {
     super.initState();
@@ -52,7 +113,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       qtyCtrl.text = q.toString();
       reorderCtrl.text = p.reorderLevel.toString();
       descCtrl.text = p.description;
-      unit = p.unit;
+      unit = _normalizeUnit(p.unit);
     } else {
       ProductStorage.nextSku().then((s) {
         if (mounted) setState(() => skuCtrl.text = s);
@@ -87,7 +148,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           name: nameCtrl.text.trim(),
           sku: skuCtrl.text.trim().toUpperCase(),
           category: categoryCtrl.text.trim(),
-          unit: unit,
+          unit: _normalizeUnit(unit),
           costPrice: canEditCost ? _parse(costCtrl.text) : old.costPrice,
           sellingPrice: _parse(sellCtrl.text),
           quantity: _parse(qtyCtrl.text),
@@ -110,7 +171,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           name: nameCtrl.text,
           sku: skuCtrl.text,
           category: categoryCtrl.text,
-          unit: unit,
+          unit: _normalizeUnit(unit),
           costPrice: _parse(costCtrl.text),
           sellingPrice: _parse(sellCtrl.text),
           quantity: _parse(qtyCtrl.text),
@@ -205,22 +266,12 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: unit,
+                value: _unitChoices.contains(unit) ? unit : _normalizeUnit(unit),
                 decoration: const InputDecoration(
                   labelText: 'Unit',
                   prefixIcon: Icon(Icons.straighten_rounded),
                 ),
-                items: const [
-                  'pcs',
-                  'carton',
-                  'pack',
-                  'yard',
-                  'kg',
-                  'g',
-                  'litre',
-                  'bag',
-                  'dozen',
-                ]
+                items: _unitChoices
                     .map((u) => DropdownMenuItem(value: u, child: Text(u)))
                     .toList(),
                 onChanged: (v) {

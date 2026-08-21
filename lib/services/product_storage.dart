@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import 'audit_log_storage.dart';
 import 'auth_service.dart';
+import 'data_refresh.dart';
 import 'hive_boxes.dart';
 import 'location_service.dart';
 
@@ -20,6 +21,7 @@ class ProductStorage {
 
   static Future<void> add(Product product) async {
     await _box.add(product.toMap());
+    DataRefresh.notify();
     await AuditLogStorage.log(
       action: 'product_added',
       module: 'products',

@@ -59,6 +59,8 @@ class Sale {
   final String createdAt;
   final String note;
   final bool voided;
+  final String locationId;
+  final String locationName;
 
   Sale({
     required this.id,
@@ -78,6 +80,8 @@ class Sale {
     required this.createdAt,
     this.note = '',
     this.voided = false,
+    this.locationId = '',
+    this.locationName = '',
   });
 
   Map<String, dynamic> toMap() => {
@@ -98,6 +102,8 @@ class Sale {
         'createdAt': createdAt,
         'note': note,
         'voided': voided,
+        'locationId': locationId,
+        'locationName': locationName,
       };
 
   factory Sale.fromMap(Map map) {

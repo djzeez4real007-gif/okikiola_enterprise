@@ -589,31 +589,29 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
                               ),
                             ),
                           ),
-                          if (isOwner) ...[
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: OutlinedButton.icon(
-                                onPressed: busy ? null : _cashOutSheet,
-                                icon: const Icon(Icons.money_off_csred_rounded,
-                                    color: Colors.white),
-                                label: const Text(
-                                  'REMOVE CASH FROM DRAWER',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                  ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: OutlinedButton.icon(
+                              onPressed: busy ? null : _cashOutSheet,
+                              icon: const Icon(Icons.money_off_csred_rounded,
+                                  color: Colors.white),
+                              label: const Text(
+                                'CASH OUT (remove from drawer)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
                                 ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.white70),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.white70),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ],
                     ),

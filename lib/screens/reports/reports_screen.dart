@@ -8,6 +8,9 @@ import '../../services/sale_storage.dart';
 import '../../services/shift_storage.dart';
 import '../../services/stock_snapshot_storage.dart';
 import '../../models/stock_snapshot.dart';
+import '../../services/auth_service.dart';
+import '../../services/location_service.dart';
+import '../../services/financial_report_pdf_service.dart';
 
 /// Reports with Day / Month / Year filters (multi-year ready).
 class ReportsScreen extends StatefulWidget {
@@ -27,6 +30,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   late int selectedYear;
 
   double periodSales = 0;
+  double periodCogs = 0;
   double periodExpenses = 0;
   double stockValue = 0;
   int productCount = 0;
@@ -104,9 +108,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     setState(() => loading = true);
 
     final sales = await SaleStorage.getAll();
+    final productsAllEarly = await ProductStorage.getAll();
+    final costById = {for (final p in productsAllEarly) p.id: p.costPrice};
+    final costByName = {
+      for (final p in productsAllEarly) p.name.toLowerCase(): p.costPrice
+    };
+
     double sTotal = 0;
     int sCount = 0;
     double unitsSoldPeriod = 0;
+    double cogsPeriod = 0;
     final Map<String, Map<String, dynamic>> soldMap = {};
     for (final s in sales) {
       if (s.voided) continue;
@@ -115,6 +126,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
       sCount++;
       for (final it in s.items) {
         unitsSoldPeriod += it.quantity;
+        final cost = costById[it.productId] ??
+            costByName[it.productName.toLowerCase()] ??
+            0.0;
+        cogsPeriod += cost * it.quantity;
         final key = it.productId.isNotEmpty ? it.productId : it.productName;
         final row = soldMap.putIfAbsent(
           key,
@@ -135,7 +150,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ? ranked.reversed.take(ranked.length).toList()
         : ranked.reversed.take(10).toList();
     // Also include products with zero sales in period as slow (optional)
-    final productsAll = await ProductStorage.getAll();
+    final productsAll = productsAllEarly;
     final soldIds = soldMap.keys.toSet();
     final zeroSold = <Map<String, dynamic>>[];
     for (final p in productsAll.where((p) => p.active)) {
@@ -207,6 +222,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (!mounted) return;
     setState(() {
       periodSales = sTotal;
+      periodCogs = cogsPeriod;
       periodExpenses = eTotal;
       salesCount = sCount;
       expenseCount = eCount;
@@ -240,9 +256,39 @@ class _ReportsScreenState extends State<ReportsScreen> {
     await load();
   }
 
+
+  Future<void> _exportPdf() async {
+    final gross = periodSales - periodCogs;
+    final net = gross - periodExpenses - periodCashShort;
+    final data = FinancialReportData(
+      periodLabel: periodLabel,
+      sales: periodSales,
+      salesCount: salesCount,
+      cogs: periodCogs,
+      grossProfit: gross,
+      expenses: periodExpenses,
+      expenseCount: expenseCount,
+      cashShort: periodCashShort,
+      netProfit: net,
+      unitsSold: unitsSold,
+      topSellers: topSellers,
+      locationName: LocationService.current?.name ?? 'All locations',
+      generatedBy: AuthService.currentName,
+    );
+    try {
+      await FinancialReportPdfService.share(data);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final net = periodSales - periodExpenses;
+    final gross = periodSales - periodCogs;
+    final net = gross - periodExpenses - periodCashShort;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -275,6 +321,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           fontSize: 22,
                         ),
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Share P&L PDF',
+                      onPressed: loading ? null : _exportPdf,
+                      icon: const Icon(Icons.picture_as_pdf_rounded,
+                          color: Colors.white),
                     ),
                     IconButton(
                       onPressed: load,
@@ -478,6 +530,55 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           Icons.shopping_bag_outlined,
                           wide: true,
                           subtitle: 'In selected day / month / year',
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            _card(
+                              'COGS',
+                              money.format(periodCogs),
+                              const Color(0xFFB45309),
+                              Icons.inventory_outlined,
+                              subtitle: 'Cost of goods sold',
+                            ),
+                            const SizedBox(width: 10),
+                            _card(
+                              'Gross profit',
+                              money.format(gross),
+                              AppColors.primary,
+                              Icons.trending_up_rounded,
+                              subtitle: 'Sales − COGS',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _card(
+                          'Net profit',
+                          money.format(net),
+                          net >= 0 ? AppColors.success : AppColors.danger,
+                          Icons.account_balance_wallet_rounded,
+                          wide: true,
+                          subtitle: 'Gross − expenses − cash short',
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: loading ? null : _exportPdf,
+                            icon: const Icon(Icons.picture_as_pdf_rounded),
+                            label: const Text(
+                              'SHARE / SAVE P&L PDF',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 18),
                         const Text(

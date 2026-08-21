@@ -15,8 +15,10 @@ import '../screens/stock/stock_count_screen.dart';
 import '../screens/stock/stock_in_screen.dart';
 import '../screens/stock/stock_snapshots_screen.dart';
 import '../screens/locations/locations_screen.dart';
+import '../screens/settings/backup_screen.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/data_refresh.dart';
 
 class _NavItem {
   final String key;
@@ -132,6 +134,12 @@ class _AppShellState extends State<AppShell> {
         icon: Icons.storefront_rounded,
         label: 'Locations',
         page: LocationsScreen(),
+      ),
+      const _NavItem(
+        key: Permissions.settings,
+        icon: Icons.backup_rounded,
+        label: 'Backup',
+        page: BackupScreen(),
       ),
     ];
     return all.where((e) => Permissions.canAccess(role, e.key)).toList();
@@ -327,6 +335,12 @@ class _AppShellState extends State<AppShell> {
                     selected: i == index,
                     onTap: () {
                       setState(() => index = i);
+                      // After Dashboard mounts, bump refresh so figures reload
+                      if (nav[i].key == Permissions.dashboard) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          DataRefresh.notify();
+                        });
+                      }
                       Navigator.pop(context);
                     },
                   );
