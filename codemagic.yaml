@@ -1,20 +1,25 @@
-﻿workflows:
-  android-workflow:
-    name: Flutter Android Build
+workflows:
+  android-apk:
+    name: Okikiola Android APK
     max_build_duration: 60
+    instance_type: mac_mini_m2
     environment:
       flutter: stable
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
+      vars:
+        PACKAGE_NAME: "com.okikiola.enterprise"
     scripts:
-      - name: Fetch dependencies
+      - name: Get Flutter packages
         script: |
           flutter pub get
       - name: Build Android APK
         script: |
           flutter build apk --release
     artifacts:
-      - build/app/outputs/flutter-apk/*-release.apk
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      email:
+        recipients:
+          - djzeez4real007@gmail.com
+        notify:
+          success: true
+          failure: true
