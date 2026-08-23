@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -91,24 +90,10 @@ class BackupService {
 
   /// Restores from a picked JSON backup. Returns number of boxes restored.
   static Future<int> restoreFromPicker() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: true,
+    throw Exception(
+      'File import is disabled in this build. '
+      'Use Export backup, then restore on a computer version later.',
     );
-    if (result == null || result.files.isEmpty) {
-      throw Exception('No file selected');
-    }
-    final file = result.files.first;
-    String raw;
-    if (file.bytes != null) {
-      raw = utf8.decode(file.bytes!);
-    } else if (file.path != null) {
-      raw = await File(file.path!).readAsString();
-    } else {
-      throw Exception('Could not read backup file');
-    }
-    return restoreFromJson(raw);
   }
 
   static Future<int> restoreFromJson(String raw) async {

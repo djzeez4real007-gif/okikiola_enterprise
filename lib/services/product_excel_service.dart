@@ -78,8 +78,9 @@ class ProductExcelService {
     }
 
     for (var c = 0; c < headers.length; c++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
-        ..value = TextCellValue(headers[c]);
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
+          .value = TextCellValue(headers[c]);
     }
 
     for (var r = 0; r < products.length; r++) {
@@ -102,8 +103,8 @@ class ProductExcelService {
       ];
       for (var c = 0; c < row.length; c++) {
         final v = row[c];
-        final cell =
-            sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r + 1));
+        final cell = sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r + 1));
         if (v is num) {
           cell.value = DoubleCellValue(v.toDouble());
         } else {
@@ -115,11 +116,8 @@ class ProductExcelService {
     final bytes = excel.encode();
     if (bytes == null) throw Exception('Could not build Excel file');
 
-    final stamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(':', '-')
-        .split('.')
-        .first;
+    final stamp =
+        DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
     final fileName = 'okikiola_products_$stamp.xlsx';
 
     if (kIsWeb) {
@@ -220,7 +218,8 @@ class ProductExcelService {
       'retail',
     ]);
     final cQty = colOf(['quantity', 'qty', 'stock', 'opening stock']);
-    final cReorder = colOf(['reorder level', 'reorder', 'min stock', 'minimum']);
+    final cReorder =
+        colOf(['reorder level', 'reorder', 'min stock', 'minimum']);
     final cDesc = colOf(['description', 'note', 'notes']);
     final cActive = colOf(['active', 'status']);
 
@@ -360,7 +359,6 @@ class ImportResult {
     required this.errors,
   });
 
-  String get summary =>
-      'Created $created · Updated $updated · Skipped $skipped'
+  String get summary => 'Created $created · Updated $updated · Skipped $skipped'
       '${errors.isEmpty ? '' : ' · ${errors.length} error(s)'}';
 }
