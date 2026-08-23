@@ -43,7 +43,7 @@ class _OkikiolaAppState extends State<OkikiolaApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: !splashDone
           ? SplashScreen(onFinished: _finishSplash)
           : (AuthService.isLoggedIn
